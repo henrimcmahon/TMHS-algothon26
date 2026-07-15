@@ -222,7 +222,7 @@ class TradingEngine:
             market_statistics
         )
 
-        self.signal_model.residual_statistics = (
+        self.signal_model.replace_residual_statistics(
             residual_statistics
         )
 
