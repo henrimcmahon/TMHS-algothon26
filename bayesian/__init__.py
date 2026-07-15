@@ -1,13 +1,21 @@
-from .belief_state import BeliefState
+from .bayesian_signal_model import (
+    BayesianSignalModel,
+    TickerBayesianPrediction,
+)
+
 from .bayesian_updater import (
+    BayesianUpdater,
     BayesianPrediction,
     BayesianUpdateDiagnostics,
-    BayesianUpdater,
 )
+
+from .belief_state import BeliefState
 
 __all__ = [
     "BeliefState",
+    "BayesianUpdater",
     "BayesianPrediction",
     "BayesianUpdateDiagnostics",
-    "BayesianUpdater",
+    "BayesianSignalModel",
+    "TickerBayesianPrediction",
 ]
