@@ -115,7 +115,7 @@ class StrategyVisualizer:
             width_ratios=(1.05, 2.2),
             height_ratios=(0.75, 1.0, 1.0, 0.12),
             left=0.025,
-            right=0.995,
+            right=0.97,
             top=0.94,
             bottom=0.105,
             wspace=0.18,

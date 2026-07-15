@@ -101,24 +101,24 @@ if __name__ == "__main__":
         proxy="ALGO",
     )
 
-    all_residual_stats = (
-        residual_stats.residual_statistics(
-            universe
-        )
-    )
-
-    features = residual_stats.feature_matrix(
-        end=market_stats.number_of_return_days,
-        estimation_window=60,
-        signal_window=20,
-    )
-
-    all_residual_stats.to_csv("data/residual_stats.csv")
-    features.to_csv("data/features.csv")
-
-    # visualiser = StrategyVisualizer(
-    #     statistics=market_stats
+    # all_residual_stats = (
+    #     residual_stats.residual_statistics(
+    #         universe
+    #     )
     # )
+
+    # features = residual_stats.feature_matrix(
+    #     end=market_stats.number_of_return_days,
+    #     estimation_window=60,
+    #     signal_window=20,
+    # )
+
+    # all_residual_stats.to_csv("data/residual_stats.csv")
+    # features.to_csv("data/features.csv")
+
+    visualiser = StrategyVisualizer(
+        statistics=market_stats
+    )
 
     # algo_stats = market_stats.ticker_statistics(
     #     "ALGO",
@@ -135,11 +135,11 @@ if __name__ == "__main__":
     # summary.to_csv("ALGO_proxy_summary.csv")
     # lead_lag.to_csv("ALGO_lead_lag.csv")
 
-    # visualiser.plot_interactive_dashboard(
-    #     window=60,
-    #     beta_window=30,
-    #     interval=120,
-    #     neighbour_count=3,
-    # )
+    visualiser.plot_interactive_dashboard(
+        window=60,
+        beta_window=30,
+        interval=120,
+        neighbour_count=3,
+    )
 
     
