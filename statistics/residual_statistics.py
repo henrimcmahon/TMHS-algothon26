@@ -89,7 +89,10 @@ class ResidualStatistics:
 
     @property
     def returns(self) -> FloatArray:
-        return self.market_statistics.log_returns
+        return np.asarray(
+            self.market_statistics.data,
+            dtype=np.float64,
+        )
 
     @property
     def proxy_returns(self) -> FloatArray:
@@ -348,6 +351,173 @@ class ResidualStatistics:
 
         return matrix
 
+    def residual_matrix_fast(
+        self,
+        estimation_window: int = 60,
+    ) -> FloatArray:
+        """
+        Calculate rolling one-step residuals for every ticker simultaneously.
+
+        Returns shape:
+
+            (number_of_tickers, number_of_valid_residuals)
+
+        Column j is the residual for the observation at:
+
+            estimation_window - 1 + j
+
+        Alpha and beta are estimated from the rolling window ending at that
+        same observation, matching the current residual_returns behaviour.
+        """
+        returns = np.asarray(
+            self.returns,
+            dtype=np.float64,
+        )
+
+        number_of_tickers, number_of_days = returns.shape
+
+        if estimation_window < 2:
+            raise ValueError(
+                "estimation_window must be at least 2"
+            )
+
+        if estimation_window > number_of_days:
+            raise ValueError(
+                "estimation_window exceeds available returns"
+            )
+
+        proxy = returns[self.proxy_index]
+
+        number_of_windows = (
+            number_of_days - estimation_window + 1
+        )
+
+        # Prefix sums allow every rolling sum to be calculated in one pass.
+        ticker_prefix = np.concatenate(
+            (
+                np.zeros(
+                    (number_of_tickers, 1),
+                    dtype=np.float64,
+                ),
+                np.cumsum(
+                    returns,
+                    axis=1,
+                ),
+            ),
+            axis=1,
+        )
+
+        proxy_prefix = np.concatenate(
+            (
+                np.zeros(1, dtype=np.float64),
+                np.cumsum(proxy),
+            )
+        )
+
+        proxy_squared_prefix = np.concatenate(
+            (
+                np.zeros(1, dtype=np.float64),
+                np.cumsum(proxy**2),
+            )
+        )
+
+        cross_prefix = np.concatenate(
+            (
+                np.zeros(
+                    (number_of_tickers, 1),
+                    dtype=np.float64,
+                ),
+                np.cumsum(
+                    returns * proxy[None, :],
+                    axis=1,
+                ),
+            ),
+            axis=1,
+        )
+
+        starts = np.arange(number_of_windows)
+        ends = starts + estimation_window
+
+        ticker_sums = (
+            ticker_prefix[:, ends]
+            - ticker_prefix[:, starts]
+        )
+
+        proxy_sums = (
+            proxy_prefix[ends]
+            - proxy_prefix[starts]
+        )
+
+        proxy_squared_sums = (
+            proxy_squared_prefix[ends]
+            - proxy_squared_prefix[starts]
+        )
+
+        cross_sums = (
+            cross_prefix[:, ends]
+            - cross_prefix[:, starts]
+        )
+
+        ticker_means = (
+            ticker_sums / estimation_window
+        )
+
+        proxy_means = (
+            proxy_sums / estimation_window
+        )
+
+        covariance_numerators = (
+            cross_sums
+            - estimation_window
+            * ticker_means
+            * proxy_means[None, :]
+        )
+
+        variance_numerators = (
+            proxy_squared_sums
+            - estimation_window
+            * proxy_means**2
+        )
+
+        safe_variance = np.where(
+            np.abs(variance_numerators)
+            > np.finfo(np.float64).eps,
+            variance_numerators,
+            np.inf,
+        )
+
+        betas = (
+            covariance_numerators
+            / safe_variance[None, :]
+        )
+
+        alphas = (
+            ticker_means
+            - betas * proxy_means[None, :]
+        )
+
+        observed_returns = returns[
+            :,
+            estimation_window - 1:
+        ]
+
+        observed_proxy_returns = proxy[
+            estimation_window - 1:
+        ]
+
+        residuals = (
+            observed_returns
+            - alphas
+            - betas
+            * observed_proxy_returns[None, :]
+        )
+
+        residuals[self.proxy_index] = 0.0
+
+        return np.asarray(
+            residuals,
+            dtype=np.float64,
+        )
     # ==============================================================
     # Residual statistics
     # ==============================================================

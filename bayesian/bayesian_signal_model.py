@@ -72,6 +72,9 @@ class BayesianSignalModel:
             residual_statistics.market_statistics
         )
 
+        self._cached_residual_matrix: FloatArray | None = None
+        self._cached_number_of_return_days: int | None = None
+
         self.forgetting_rate = forgetting_rate
         self.residual_estimation_window = residual_estimation_window
 
@@ -153,27 +156,74 @@ class BayesianSignalModel:
             )
 
         return end
+    
+    def _get_residual_matrix(
+        self,
+    ) -> FloatArray:
+        current_days = (
+            self.market_statistics
+            .number_of_return_days
+        )
+
+        if (
+            self._cached_residual_matrix is None
+            or self._cached_number_of_return_days
+            != current_days
+        ):
+            self._cached_residual_matrix = (
+                self.residual_statistics
+                .residual_matrix_fast(
+                    estimation_window=(
+                        self.residual_estimation_window
+                    )
+                )
+            )
+
+            self._cached_number_of_return_days = (
+                current_days
+            )
+
+        return self._cached_residual_matrix
 
     def residual_history(
         self,
         ticker_index: int,
         end: int,
     ) -> FloatArray:
-        residuals = (
-            self.residual_statistics
-            .residual_returns(
-                ticker=ticker_index,
-                end=end,
-                estimation_window=(
-                    self.residual_estimation_window
-                ),
-            )
+        matrix = self._get_residual_matrix()
+
+        valid_count = (
+            end
+            - self.residual_estimation_window
+            + 1
         )
 
+        if valid_count < 1:
+            return np.empty(
+                0,
+                dtype=np.float64,
+            )
+
         return np.asarray(
-            residuals,
+            matrix[
+                ticker_index,
+                :valid_count,
+            ],
             dtype=np.float64,
         )
+    
+    def replace_residual_statistics(
+        self,
+        residual_statistics: ResidualStatistics,
+    ) -> None:
+        self.residual_statistics = residual_statistics
+        self.market_statistics = (
+            residual_statistics.market_statistics
+        )
+        self.symbols = residual_statistics.symbols
+
+        self._cached_residual_matrix = None
+        self._cached_number_of_return_days = None
 
     @property
     def last_processed_end(self) -> int | None:
