@@ -1,214 +1,145 @@
 import numpy as np
 
-nInst=51
+from models.ticker_universe import TickerUniverse
+from statistics.market_statistics import MarketStatistics
+from statistics.residual_statistics import ResidualStatistics
+
+nInst = 51
 currentPos = np.zeros(nInst)
-def getMyPosition (prcSoFar):
+
+
+def getMyPosition(
+    prcSoFar: np.ndarray,
+) -> np.ndarray:
     global currentPos
-    (nins,nt) = prcSoFar.shape
-    if (nt < 2):
-        return np.zeros(nins)
-    lastRet = np.log(prcSoFar[:,-1] / prcSoFar[:,-2])
-    lNorm = np.sqrt(lastRet.dot(lastRet))
-    lastRet /= lNorm
-    rpos = np.array([int(x) for x in 5000 * lastRet / prcSoFar[:,-1]])
-    currentPos = np.array([int(x) for x in currentPos+rpos])
+
+    n_instruments, n_days = prcSoFar.shape
+
+    if n_days < 61:
+        return np.zeros(n_instruments)
+
+    stats = MarketStatistics(
+        prices=np.asarray(
+            prcSoFar,
+            dtype=np.float64,
+        )
+    )
+
+    market, features = stats.trading_state(
+        end=stats.number_of_return_days,
+        window=60,
+    )
+
+    mean_return = features[:, 0]
+    volatility = features[:, 1]
+    sharpe = features[:, 2]
+    relative_strength = features[:, 8]
+
+    # Example score only — this needs backtesting.
+    score = (
+        0.35 * sharpe
+        + 0.40 * relative_strength
+        + 0.25 * mean_return
+    )
+
+    # Reduce risk when the market is highly concentrated
+    # or displaying unusually heavy tails.
+    regime_multiplier = 1.0
+
+    if market.pc1_ratio > 0.35:
+        regime_multiplier *= 0.70
+
+    if market.excess_kurtosis > 4:
+        regime_multiplier *= 0.60
+
+    inverse_volatility = 1.0 / np.maximum(
+        volatility,
+        1e-8,
+    )
+
+    raw_weights = (
+        score
+        * inverse_volatility
+        * regime_multiplier
+    )
+
+    gross_exposure = np.sum(
+        np.abs(raw_weights)
+    )
+
+    if gross_exposure == 0:
+        return np.zeros(n_instruments)
+
+    weights = raw_weights / gross_exposure
+
+    capital = 5000
+
+    positions = (
+        capital
+        * weights
+        / prcSoFar[:, -1]
+    )
+
+    currentPos = np.asarray(
+        positions,
+        dtype=int,
+    )
+
     return currentPos
 
-from models.ticker_universe import TickerUniverse
-from visualisation.strategy_visualiser import StrategyVisualizer
-from statistics.market_statistics import MarketStatistics
-
-from matplotlib import pyplot as plt
-
-universe = TickerUniverse("prices.txt")
-
-# print(universe.as_dataframe())
-
-# visualiser = StrategyVisualizer()
-
-# visualiser.plot_normalised_tickers(
-#     universe,
-#     scale="log_return",
-#     show_mean=True,
-#     show_sigma_bands=True,
-#     show_best_fit=True,
-# )
-
-stats = MarketStatistics(universe)
-
-# ---------- Derived statistics ----------
-
-tail_spread = stats.percentile_95 - stats.percentile_5
-
-rolling_window = 20
-
-rolling_breadth = np.convolve(
-
-    stats.positive_fraction,
-
-    np.ones(rolling_window) / rolling_window,
-
-    mode="valid",
-
-)
-
-rolling_sharpe = np.convolve(
-
-    stats.mu,
-
-    np.ones(rolling_window) / rolling_window,
-
-    mode="valid",
-
-) / np.convolve(
-
-    stats.sigma,
-
-    np.ones(rolling_window) / rolling_window,
-
-    mode="valid",
-
-)
-
-pc1_ratio = stats.rolling_pc1_ratio(window=60)
-
-# ---------- Plot ----------
-
-figure, axes = plt.subplots(
-
-    3,
-
-    2,
-
-    figsize=(14, 8),
-
-)
-
-axes = axes.flatten()
-
-# ------------------------------------------------------------------
-
-# 1. Mean & Median
-
-# ------------------------------------------------------------------
-
-axes[0].plot(stats.mu, label="Mean")
-
-axes[0].plot(stats.median, label="Median")
-
-axes[0].axhline(0, linestyle="--", linewidth=1)
-
-axes[0].set_title("Cross-sectional Mean & Median")
-
-axes[0].legend()
-
-# ------------------------------------------------------------------
-
-# 2. Rolling Sharpe
-
-# ------------------------------------------------------------------
-
-axes[1].plot(
-
-    np.arange(rolling_window - 1, len(stats.mu)),
-
-    rolling_sharpe,
-
-)
-
-axes[1].axhline(0, linestyle="--", linewidth=1)
-
-axes[1].set_title(f"{rolling_window}-Day Rolling Sharpe")
-
-# ------------------------------------------------------------------
-
-# 3. Breadth
-
-# ------------------------------------------------------------------
-
-axes[2].plot(stats.positive_fraction, alpha=0.35, label="Daily")
-
-axes[2].plot(
-
-    np.arange(rolling_window - 1, len(stats.positive_fraction)),
-
-    rolling_breadth,
-
-    linewidth=2,
-
-    label="20-day MA",
-
-)
-
-axes[2].axhline(0.5, linestyle="--", linewidth=1)
-
-axes[2].set_ylim(0, 1)
-
-axes[2].set_title("Market Breadth")
-
-axes[2].legend()
-
-# ------------------------------------------------------------------
-
-# 4. Tail Spread
-
-# ------------------------------------------------------------------
-
-axes[3].plot(tail_spread)
-
-axes[3].set_title("95th − 5th Percentile Spread")
-
-# ------------------------------------------------------------------
-
-# 5. Skewness & Kurtosis
-
-# ------------------------------------------------------------------
-
-axes[4].plot(stats.skewness, label="Skewness")
-
-axes[4].plot(stats.kurtosis, label="Excess Kurtosis")
-
-axes[4].axhline(0, linestyle="--", linewidth=1)
-
-axes[4].set_title("Distribution Shape")
-
-axes[4].legend()
-
-# ------------------------------------------------------------------
-
-# 6. Market Structure
-
-# ------------------------------------------------------------------
-
-axes[5].plot(
-
-    np.arange(60 - 1, 60 - 1 + len(pc1_ratio)),
-
-    pc1_ratio,
-
-)
-
-axes[5].set_title("Rolling PC1 Explained Variance")
-
-# ------------------------------------------------------------------
-
-for axis in axes:
-
-    axis.grid(alpha=0.25)
-
-    axis.set_xlabel("Day")
-
-figure.tight_layout()
-
-plt.show()
-
-universe = TickerUniverse("prices.txt")
-
-visualiser = StrategyVisualizer()
-
-visualiser.plot_interactive_market_explorer(
-    universe,
-    window=60,
-    interval=100,
-    beta_window=30,
-)
+if __name__ == "__main__":
+    from visualisation.strategy_visualiser import StrategyVisualizer
+
+    universe = TickerUniverse("prices.txt")
+
+    market_stats = MarketStatistics(
+        universe=universe
+    )
+
+    residual_stats = ResidualStatistics(
+        market_statistics=market_stats,
+        proxy="ALGO",
+    )
+
+    all_residual_stats = (
+        residual_stats.residual_statistics(
+            universe
+        )
+    )
+
+    features = residual_stats.feature_matrix(
+        end=market_stats.number_of_return_days,
+        estimation_window=60,
+        signal_window=20,
+    )
+
+    all_residual_stats.to_csv("data/residual_stats.csv")
+    features.to_csv("data/features.csv")
+
+    # visualiser = StrategyVisualizer(
+    #     statistics=market_stats
+    # )
+
+    # algo_stats = market_stats.ticker_statistics(
+    #     "ALGO",
+    #     window=60,
+    #     beta_window=30,
+    # )
+
+    # algo_stats.to_csv("ALGO_stats.csv")
+
+    # summary, lead_lag = market_stats.analyse_market_proxy(
+    #     "ALGO"
+    # )
+
+    # summary.to_csv("ALGO_proxy_summary.csv")
+    # lead_lag.to_csv("ALGO_lead_lag.csv")
+
+    # visualiser.plot_interactive_dashboard(
+    #     window=60,
+    #     beta_window=30,
+    #     interval=120,
+    #     neighbour_count=3,
+    # )
+
+    
