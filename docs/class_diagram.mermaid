@@ -1,0 +1,286 @@
+classDiagram
+    direction LR
+
+    class Strategy {
+        <<abstract>>
+        +name: str
+        +parameters: dict[str, Any]
+        +tickers: list[Ticker]
+        +initialize(context: StrategyContext) None
+        +generate_signals(data: MarketData) list[Signal]*
+        +validate_parameters() bool
+        +reset() None
+    }
+
+    class MovingAverageCrossover {
+        +short_window: int
+        +long_window: int
+        +position_size: float
+        +generate_signals(data: MarketData) list[Signal]
+        +validate_parameters() bool
+    }
+
+    class MeanReversionStrategy {
+        +lookback_window: int
+        +entry_z_score: float
+        +exit_z_score: float
+        +position_size: float
+        +generate_signals(data: MarketData) list[Signal]
+        +validate_parameters() bool
+    }
+
+    class MomentumStrategy {
+        +lookback_window: int
+        +holding_period: int
+        +signal_threshold: float
+        +position_size: float
+        +generate_signals(data: MarketData) list[Signal]
+        +validate_parameters() bool
+    }
+
+    class Ticker {
+        +symbol: str
+        +exchange: str
+        +currency: str
+        +asset_type: AssetType
+        +sector: str
+        +tick_size: float
+        +lot_size: int
+        +__str__() str
+    }
+
+    class MarketData {
+        +ticker: Ticker
+        +timestamps: DatetimeIndex
+        +open: Series[float]
+        +high: Series[float]
+        +low: Series[float]
+        +close: Series[float]
+        +volume: Series[float]
+        +returns() Series[float]
+        +slice(start: datetime, end: datetime) MarketData
+        +validate() bool
+    }
+
+    class DataProvider {
+        <<abstract>>
+        +load(ticker: Ticker, start: datetime, end: datetime) MarketData*
+        +load_many(tickers: list[Ticker], start: datetime, end: datetime) dict[Ticker, MarketData]
+    }
+
+    class CSVDataProvider {
+        +data_directory: Path
+        +datetime_column: str
+        +load(ticker: Ticker, start: datetime, end: datetime) MarketData
+    }
+
+    class Signal {
+        +timestamp: datetime
+        +ticker: Ticker
+        +direction: SignalDirection
+        +strength: float
+        +target_weight: float
+        +reason: str
+    }
+
+    class Order {
+        +id: str
+        +timestamp: datetime
+        +ticker: Ticker
+        +side: OrderSide
+        +quantity: float
+        +order_type: OrderType
+        +limit_price: float?
+        +status: OrderStatus
+    }
+
+    class Trade {
+        +order_id: str
+        +timestamp: datetime
+        +ticker: Ticker
+        +side: OrderSide
+        +quantity: float
+        +price: float
+        +commission: float
+        +slippage: float
+        +notional() float
+    }
+
+    class Position {
+        +ticker: Ticker
+        +quantity: float
+        +average_price: float
+        +market_price: float
+        +realized_pnl: float
+        +unrealized_pnl() float
+        +market_value() float
+        +update(trade: Trade) None
+    }
+
+    class Portfolio {
+        +initial_cash: float
+        +cash: float
+        +positions: dict[Ticker, Position]
+        +equity_history: Series[float]
+        +apply_trade(trade: Trade) None
+        +update_prices(prices: dict[Ticker, float]) None
+        +total_equity() float
+        +gross_exposure() float
+        +net_exposure() float
+    }
+
+    class RiskManager {
+        +max_position_weight: float
+        +max_gross_exposure: float
+        +max_drawdown: float
+        +stop_loss: float?
+        +approve_order(order: Order, portfolio: Portfolio) bool
+        +size_signal(signal: Signal, portfolio: Portfolio) Order?
+    }
+
+    class ExecutionModel {
+        +commission_rate: float
+        +fixed_commission: float
+        +slippage_bps: float
+        +execute(order: Order, price: float) Trade
+    }
+
+    class BacktestConfig {
+        +start_date: datetime
+        +end_date: datetime
+        +initial_cash: float
+        +frequency: str
+        +annualisation_factor: int
+        +risk_free_rate: float
+    }
+
+    class BacktestEngine {
+        +strategy: Strategy
+        +data_provider: DataProvider
+        +portfolio: Portfolio
+        +risk_manager: RiskManager
+        +execution_model: ExecutionModel
+        +config: BacktestConfig
+        +run() BacktestResult
+        -process_signals(signals: list[Signal]) None
+        -mark_to_market(timestamp: datetime) None
+    }
+
+    class BacktestResult {
+        +strategy_name: str
+        +equity_curve: Series[float]
+        +pnl: Series[float]
+        +returns: Series[float]
+        +trades: list[Trade]
+        +metrics: PerformanceMetrics
+    }
+
+    class PerformanceMetrics {
+        +mean_pnl: float
+        +pnl_std_dev: float
+        +annualised_sharpe: float
+        +score: float
+        +total_return: float
+        +max_drawdown: float
+        +win_rate: float
+        +trade_count: int
+        +calculate(pnl: Series[float], trades: list[Trade], annualisation_factor: int) PerformanceMetrics
+    }
+
+    class PerformancePlotter {
+        +plot_equity_curve(result: BacktestResult) Figure
+        +plot_pnl(result: BacktestResult) Figure
+        +plot_drawdown(result: BacktestResult) Figure
+        +plot_return_distribution(result: BacktestResult) Figure
+        +plot_signals(data: MarketData, signals: list[Signal]) Figure
+    }
+
+    class StrategyContext {
+        +portfolio: Portfolio
+        +current_time: datetime
+        +latest_prices: dict[Ticker, float]
+        +metadata: dict[str, Any]
+    }
+
+    class AssetType {
+        <<enumeration>>
+        EQUITY
+        ETF
+        FUTURE
+        FOREX
+        CRYPTO
+    }
+
+    class SignalDirection {
+        <<enumeration>>
+        LONG
+        SHORT
+        EXIT
+        HOLD
+    }
+
+    class OrderSide {
+        <<enumeration>>
+        BUY
+        SELL
+    }
+
+    class OrderType {
+        <<enumeration>>
+        MARKET
+        LIMIT
+    }
+
+    class OrderStatus {
+        <<enumeration>>
+        PENDING
+        FILLED
+        REJECTED
+        CANCELLED
+    }
+
+    Strategy <|-- MovingAverageCrossover
+    Strategy <|-- MeanReversionStrategy
+    Strategy <|-- MomentumStrategy
+
+    DataProvider <|-- CSVDataProvider
+
+    Strategy "1" o-- "1..*" Ticker
+    Strategy ..> MarketData
+    Strategy ..> Signal
+    Strategy ..> StrategyContext
+
+    MarketData --> Ticker
+    Signal --> Ticker
+    Signal --> SignalDirection
+    Order --> Ticker
+    Order --> OrderSide
+    Order --> OrderType
+    Order --> OrderStatus
+    Trade --> Ticker
+    Trade --> OrderSide
+    Position --> Ticker
+
+    Portfolio "1" o-- "0..*" Position
+    Portfolio ..> Trade
+
+    RiskManager ..> Signal
+    RiskManager ..> Order
+    RiskManager ..> Portfolio
+
+    ExecutionModel ..> Order
+    ExecutionModel ..> Trade
+
+    BacktestEngine --> Strategy
+    BacktestEngine --> DataProvider
+    BacktestEngine --> Portfolio
+    BacktestEngine --> RiskManager
+    BacktestEngine --> ExecutionModel
+    BacktestEngine --> BacktestConfig
+    BacktestEngine --> BacktestResult
+
+    BacktestResult "1" o-- "1" PerformanceMetrics
+    BacktestResult "1" o-- "0..*" Trade
+    PerformancePlotter ..> BacktestResult
+
+    Ticker --> AssetType
