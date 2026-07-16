@@ -330,3 +330,53 @@ class BaselineEvaluator:
                 ascending=False,
             )
         )
+    
+    def results_dataframe(
+        self,
+        results: dict[
+            str,
+            BaselineResult,
+        ],
+    ) -> pd.DataFrame:
+        if not results:
+            raise ValueError(
+                "at least one result is required"
+            )
+
+        rows = [
+            {
+                "Strategy": result.strategy_name,
+                "Gross PnL": result.gross_pnl,
+                "Total PnL": result.total_pnl,
+                "Commission": (
+                    result.total_commission
+                ),
+                "Turnover": result.total_turnover,
+                "Mean Daily PnL": (
+                    result.mean_daily_pnl
+                ),
+                "Daily PnL Std": (
+                    result.daily_pnl_std
+                ),
+                "Annualised Sharpe": (
+                    result.annualised_sharpe
+                ),
+                "Score": result.score,
+                "Maximum Drawdown": (
+                    result.maximum_drawdown
+                ),
+                "Profitable Day Fraction": (
+                    result.profitable_day_fraction
+                ),
+            }
+            for result in results.values()
+        ]
+
+        return (
+            pd.DataFrame(rows)
+            .set_index("Strategy")
+            .sort_values(
+                "Score",
+                ascending=False,
+            )
+        )
