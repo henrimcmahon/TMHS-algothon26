@@ -314,8 +314,55 @@ class LeaderAnalyser:
                 "all results must have equal length"
             )
 
+        scoring_start_days = {
+            result.scoring_start_day
+            for result in results.values()
+        }
+
+        if len(scoring_start_days) != 1:
+            raise ValueError(
+                "all results must have the same scoring_start_day"
+            )
+
+        scoring_day_counts = {
+            result.scoring_days
+            for result in results.values()
+        }
+
+        if len(scoring_day_counts) != 1:
+            raise ValueError(
+                "all results must have the same scoring_days"
+            )
+
         number_of_days = next(
             iter(lengths)
+        )
+
+        scoring_start_day = next(
+            iter(scoring_start_days)
+        )
+
+        scoring_days = next(
+            iter(scoring_day_counts)
+        )
+
+        if scoring_days != number_of_days:
+            raise ValueError(
+                "result.scoring_days must match the length "
+                "of result.daily_pnl"
+            )
+
+        # PnL observations correspond to the days after the initial
+        # scoring-window boundary.
+        #
+        # Example:
+        # scoring_start_day = 500
+        # scoring_days = 250
+        # displayed days = 501, ..., 750
+        days = np.arange(
+            scoring_start_day + 1,
+            scoring_start_day + number_of_days + 1,
+            dtype=np.int64,
         )
 
         pnl_matrix = np.vstack(
@@ -350,7 +397,7 @@ class LeaderAnalyser:
             ):
                 score_matrix[
                     strategy_index,
-                    day
+                    day,
                 ] = self._score(
                     pnl_matrix[
                         strategy_index,
@@ -496,13 +543,13 @@ class LeaderAnalyser:
                 ]
             )
 
-        day_indices = np.arange(
+        local_day_indices = np.arange(
             number_of_days
         )
 
         oracle_daily_pnl = pnl_matrix[
             oracle_indices,
-            day_indices,
+            local_day_indices,
         ]
 
         final_scores = score_matrix[
@@ -545,10 +592,8 @@ class LeaderAnalyser:
             oracle_daily_pnl
         )
 
-        best_static_cumulative_pnl = (
-            np.cumsum(
-                best_static_daily_pnl
-            )
+        best_static_cumulative_pnl = np.cumsum(
+            best_static_daily_pnl
         )
 
         cumulative_oracle_regret = (
@@ -561,12 +606,18 @@ class LeaderAnalyser:
             - leader_cumulative_pnl
         )
 
-        switch_days = np.flatnonzero(
+        switch_indices = np.flatnonzero(
             selected_indices[1:]
             != selected_indices[:-1]
         ).astype(
             np.int64
         ) + 1
+
+        # Convert local indices such as 0..249 into real day numbers
+        # such as 501..750.
+        switch_days = days[
+            switch_indices
+        ]
 
         durations = self._lead_durations(
             selected_indices
@@ -593,10 +644,7 @@ class LeaderAnalyser:
 
         return LeaderAnalysisResult(
             strategy_names=strategy_names,
-            days=np.arange(
-                number_of_days,
-                dtype=np.int64,
-            ),
+            days=days,
             selected_indices=(
                 selected_indices
             ),

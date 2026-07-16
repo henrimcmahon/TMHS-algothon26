@@ -7,6 +7,9 @@ from .strategy_visualiser import (
 from .leader_visualiser import (
     LeaderVisualiser,
 )
+from .strategy_window_explorer import (
+    StrategyWindowExplorer,
+)
 
 __all__ = [
     "Strategyvisualiser",

@@ -1,6 +1,5 @@
 Strategy,Days Leading,Fraction Leading
-Max long all assets,362,0.4833110814419226
-Max short all assets,360,0.48064085447263016
-Previous-day reversal,14,0.018691588785046728
-Previous-day momentum,12,0.01602136181575434
-ALGO short-and-hold,1,0.0013351134846461949
+Max long all assets,123,0.4939759036144578
+Max short all assets,117,0.46987951807228917
+Previous-day momentum,6,0.024096385542168676
+Previous-day reversal,3,0.012048192771084338

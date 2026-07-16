@@ -100,6 +100,25 @@ class BaselineEvaluator:
 
         strategy.reset()
 
+        number_of_days = price_history.shape[1]
+
+        if num_test_days is None:
+            num_test_days = number_of_days
+
+        if num_test_days <= 0:
+            raise ValueError(
+                "num_test_days must be positive"
+            )
+
+        if num_test_days > number_of_days:
+            raise ValueError(
+                "num_test_days cannot exceed the number of observations"
+            )
+
+        scoring_start_index = (
+            number_of_days - num_test_days
+        )
+
         prices = np.asarray(
             price_history,
             dtype=np.float64,
@@ -111,24 +130,32 @@ class BaselineEvaluator:
                 "(number_of_instruments, number_of_days)"
             )
 
-        number_of_instruments, number_of_days = prices.shape
+        number_of_instruments, number_of_days = (
+            prices.shape
+        )
 
         if number_of_days < 2:
             raise ValueError(
                 "price_history must contain at least two days"
             )
 
-        if num_test_days is not None:
-            if num_test_days <= 0:
-                raise ValueError(
-                    "num_test_days must be positive"
-                )
+        if num_test_days is None:
+            num_test_days = number_of_days
 
-            if num_test_days >= number_of_days:
-                raise ValueError(
-                    "num_test_days must be smaller than the "
-                    "number of price observations"
-                )
+        if num_test_days <= 0:
+            raise ValueError(
+                "num_test_days must be positive"
+            )
+
+        if num_test_days > number_of_days:
+            raise ValueError(
+                "num_test_days cannot exceed the "
+                "number of price observations"
+            )
+
+        scoring_start_index = (
+            number_of_days - num_test_days
+        )
 
         dollar_position_limits = np.asarray(
             strategy.position_limits(),
@@ -275,14 +302,6 @@ class BaselineEvaluator:
         # Select only the official scoring window.
         # ----------------------------------------------------------
 
-        if num_test_days is None:
-            scoring_start_index = 0
-        else:
-            scoring_start_index = (
-                len(daily_pnl)
-                - num_test_days
-            )
-
         scoring_daily_pnl = daily_pnl[
             scoring_start_index:
         ]
@@ -294,6 +313,14 @@ class BaselineEvaluator:
         scoring_commissions = daily_commissions[
             scoring_start_index:
         ]
+
+        scoring_positions = positions[
+            scoring_start_index:
+        ]
+
+        scoring_cumulative_pnl = np.cumsum(
+            scoring_daily_pnl
+        )
 
         mean_daily_pnl = float(
             np.mean(scoring_daily_pnl)
@@ -346,11 +373,11 @@ class BaselineEvaluator:
 
         return BaselineResult(
             name=strategy.name,
-            daily_pnl=daily_pnl,
-            cumulative_pnl=cumulative_pnl,
-            gross_daily_pnl=gross_daily_pnl,
-            daily_commissions=daily_commissions,
-            positions=positions,
+            daily_pnl=scoring_daily_pnl,
+            cumulative_pnl=scoring_cumulative_pnl,
+            gross_daily_pnl=scoring_gross_pnl,
+            daily_commissions=scoring_commissions,
+            positions=scoring_positions,
             total_pnl=float(
                 np.sum(scoring_daily_pnl)
             ),
@@ -365,7 +392,11 @@ class BaselineEvaluator:
             annualised_sharpe=annualised_sharpe,
             score=score,
             maximum_drawdown=maximum_drawdown,
-            scoring_start_day=scoring_start_index,
+            scoring_start_day = (
+                0
+                if num_test_days is None
+                else number_of_days - num_test_days
+            ),
             scoring_days=len(
                 scoring_daily_pnl
             ),
