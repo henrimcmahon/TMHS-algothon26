@@ -115,7 +115,7 @@ class LeaderVisualiser:
             2,
             2,
             figsize=(17, 9),
-            sharex=True,
+            sharex=False,
         )
 
         figure.subplots_adjust(

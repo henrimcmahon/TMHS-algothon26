@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 import numpy as np
@@ -16,28 +17,25 @@ FloatArray = NDArray[np.float64]
 
 @dataclass(frozen=True, slots=True)
 class BaselineResult:
-    strategy_name: str
+    name: str
 
-    daily_pnl: FloatArray
-    gross_daily_pnl: FloatArray
-    daily_commissions: FloatArray
-    daily_turnover: FloatArray
-    cumulative_pnl: FloatArray
-    positions: NDArray[np.int64]
+    daily_pnl: np.ndarray
+    cumulative_pnl: np.ndarray
+    gross_daily_pnl: np.ndarray
+    daily_commissions: np.ndarray
+    positions: np.ndarray
 
     total_pnl: float
-    gross_pnl: float
-    total_commission: float
-    total_turnover: float
+    total_gross_pnl: float
+    total_commissions: float
     mean_daily_pnl: float
-    daily_pnl_std: float
+    pnl_std: float
     annualised_sharpe: float
     score: float
     maximum_drawdown: float
-    profitable_day_fraction: float
 
-    start_day: int
-    end_day: int
+    scoring_start_day: int
+    scoring_days: int
 
 
 class BaselineEvaluator:
@@ -54,11 +52,54 @@ class BaselineEvaluator:
             annualisation_days
         )
 
+    @staticmethod
+    def _competition_score(
+        mean_daily_pnl: float,
+        pnl_std: float,
+        parameter: float = 1.0,
+    ) -> float:
+        if (
+            mean_daily_pnl <= 0.0
+            or pnl_std < 1e-10
+        ):
+            return mean_daily_pnl
+
+        annualised_sharpe = (
+            np.sqrt(250.0)
+            * mean_daily_pnl
+            / pnl_std
+        )
+
+        score_fraction = (
+            annualised_sharpe**2
+            / (
+                annualised_sharpe**2
+                + parameter**2
+            )
+        )
+
+        return float(
+            mean_daily_pnl
+            * score_fraction
+        )
+
     def evaluate(
         self,
         strategy: BaselineStrategy,
-        price_history: FloatArray,
+        price_history: np.ndarray,
+        *,
+        num_test_days: int | None = None,
     ) -> BaselineResult:
+        """
+        Backtest one strategy.
+
+        The strategy is run using the full price history. When
+        num_test_days is supplied, summary metrics are calculated only
+        from the final num_test_days observations.
+        """
+
+        strategy.reset()
+
         prices = np.asarray(
             price_history,
             dtype=np.float64,
@@ -66,317 +107,318 @@ class BaselineEvaluator:
 
         if prices.ndim != 2:
             raise ValueError(
-                "price_history must be two-dimensional"
+                "price_history must have shape "
+                "(number_of_instruments, number_of_days)"
             )
 
-        if prices.shape[0] != 51:
+        number_of_instruments, number_of_days = prices.shape
+
+        if number_of_days < 2:
             raise ValueError(
-                "price_history must contain 51 instruments"
+                "price_history must contain at least two days"
             )
 
-        if prices.shape[1] < 2:
-            raise ValueError(
-                "at least two price days are required"
-            )
+        if num_test_days is not None:
+            if num_test_days <= 0:
+                raise ValueError(
+                    "num_test_days must be positive"
+                )
 
-        strategy.reset()
+            if num_test_days >= number_of_days:
+                raise ValueError(
+                    "num_test_days must be smaller than the "
+                    "number of price observations"
+                )
 
-        number_of_intervals = (
-            prices.shape[1] - 1
+        dollar_position_limits = np.asarray(
+            strategy.position_limits(),
+            dtype=np.float64,
         )
 
-        daily_gross_pnl = np.zeros(
-            number_of_intervals,
+        commission_rates = np.asarray(
+            strategy.commission_rates(),
+            dtype=np.float64,
+        )
+
+        if dollar_position_limits.shape != (
+            number_of_instruments,
+        ):
+            raise ValueError(
+                f"{strategy.name!r} has dollar position limits "
+                f"with shape {dollar_position_limits.shape}; "
+                f"expected {(number_of_instruments,)}"
+            )
+
+        if commission_rates.shape != (
+            number_of_instruments,
+        ):
+            raise ValueError(
+                f"{strategy.name!r} has commission rates "
+                f"with shape {commission_rates.shape}; "
+                f"expected {(number_of_instruments,)}"
+            )
+
+        # ----------------------------------------------------------
+        # Run the existing full-history backtest here.
+        # ----------------------------------------------------------
+
+        positions = np.zeros(
+            (
+                number_of_days - 1,
+                number_of_instruments,
+            ),
+            dtype=np.int64,
+        )
+
+        gross_daily_pnl = np.zeros(
+            number_of_days - 1,
             dtype=np.float64,
         )
 
         daily_commissions = np.zeros(
-            number_of_intervals,
+            number_of_days - 1,
             dtype=np.float64,
         )
 
-        daily_turnover = np.zeros(
-            number_of_intervals,
-            dtype=np.float64,
-        )
-
-        previous_positions = np.zeros(
-            51,
+        current_positions = np.zeros(
+            number_of_instruments,
             dtype=np.int64,
         )
 
-        commission_rates = (
-            strategy.commission_rates()
-        )
-
-        position_history = np.zeros(
-            (
-                number_of_intervals,
-                51,
-            ),
-            dtype=np.int64,
-        )
-
-        for day in range(
-            number_of_intervals
+        for day_index in range(
+            number_of_days - 1
         ):
-            positions = np.asarray(
+            prices_so_far = prices[
+                :,
+                : day_index + 1,
+            ]
+
+            current_prices = prices[
+                :,
+                day_index,
+            ]
+
+            next_prices = prices[
+                :,
+                day_index + 1,
+            ]
+
+            proposed_positions = np.asarray(
                 strategy.get_positions(
-                    prices[:, :day + 1]
+                    prices_so_far
                 ),
                 dtype=np.int64,
             )
 
-            positions = strategy.clip_positions(
-                positions,
-                prices[:, day],
-            )
-
-            position_history[day] = positions
-
-            price_change = (
-                prices[:, day + 1]
-                - prices[:, day]
-            )
-
-            shares_traded = (
-                positions
-                - previous_positions
-            )
-
-            dollar_volume = (
-                np.abs(shares_traded)
-                * prices[:, day]
-            )
-
-            daily_gross_pnl[day] = float(
-                np.dot(
-                    positions.astype(np.float64),
-                    price_change,
+            if proposed_positions.shape != (
+                number_of_instruments,
+            ):
+                raise ValueError(
+                    f"{strategy.name!r} returned positions "
+                    f"with shape {proposed_positions.shape}; "
+                    f"expected {(number_of_instruments,)}"
                 )
+
+            new_positions = strategy.clip_positions(
+                proposed_positions,
+                current_prices,
             )
 
-            daily_turnover[day] = float(
-                np.sum(dollar_volume)
+            traded_positions = (
+                new_positions
+                - current_positions
             )
 
-            daily_commissions[day] = float(
+            traded_dollars = (
+                current_prices
+                * np.abs(traded_positions)
+            )
+
+            commission = float(
                 np.sum(
-                    dollar_volume
+                    traded_dollars
                     * commission_rates
                 )
             )
 
-            previous_positions = (
-                positions.copy()
+            gross_pnl = float(
+                np.dot(
+                    new_positions,
+                    next_prices - current_prices,
+                )
             )
 
-        daily_net_pnl = (
-            daily_gross_pnl
+            positions[
+                day_index
+            ] = new_positions
+
+            gross_daily_pnl[
+                day_index
+            ] = gross_pnl
+
+            daily_commissions[
+                day_index
+            ] = commission
+
+            current_positions = new_positions
+
+        daily_pnl = (
+            gross_daily_pnl
             - daily_commissions
         )
 
-        mean_daily_pnl = float(
-            np.mean(daily_net_pnl)
-        )
-
-        daily_pnl_std = float(
-            np.std(
-                daily_net_pnl,
-                ddof=1,
-            )
-        )
-
-        if daily_pnl_std >= 1e-10:
-            annualised_sharpe = float(
-                np.sqrt(
-                    self.annualisation_days
-                )
-                * mean_daily_pnl
-                / daily_pnl_std
-            )
-        else:
-            annualised_sharpe = 0.0
-
-        if (
-            mean_daily_pnl >= 0
-            and daily_pnl_std >= 1e-10
-        ):
-            sharpe_squared = (
-                annualised_sharpe**2
-            )
-
-            score = float(
-                mean_daily_pnl
-                * sharpe_squared
-                / (
-                    sharpe_squared + 1.0
-                )
-            )
-        else:
-            # Important: negative-mean strategies receive μ directly.
-            score = mean_daily_pnl
-
         cumulative_pnl = np.cumsum(
-            daily_net_pnl
+            daily_pnl
         )
 
-        equity = np.concatenate(
+        # ----------------------------------------------------------
+        # Select only the official scoring window.
+        # ----------------------------------------------------------
+
+        if num_test_days is None:
+            scoring_start_index = 0
+        else:
+            scoring_start_index = (
+                len(daily_pnl)
+                - num_test_days
+            )
+
+        scoring_daily_pnl = daily_pnl[
+            scoring_start_index:
+        ]
+
+        scoring_gross_pnl = gross_daily_pnl[
+            scoring_start_index:
+        ]
+
+        scoring_commissions = daily_commissions[
+            scoring_start_index:
+        ]
+
+        mean_daily_pnl = float(
+            np.mean(scoring_daily_pnl)
+        )
+
+        pnl_std = float(
+            np.std(
+                scoring_daily_pnl,
+                ddof=0,
+            )
+        )
+
+        annualised_sharpe = (
+            0.0
+            if pnl_std < 1e-10
+            else float(
+                np.sqrt(250.0)
+                * mean_daily_pnl
+                / pnl_std
+            )
+        )
+
+        score = self._competition_score(
+            mean_daily_pnl,
+            pnl_std,
+        )
+
+        scoring_cumulative_pnl = np.concatenate(
             (
-                np.asarray([0.0]),
-                cumulative_pnl,
+                np.array(
+                    [0.0],
+                    dtype=np.float64,
+                ),
+                np.cumsum(
+                    scoring_daily_pnl
+                ),
             )
         )
 
         running_peak = np.maximum.accumulate(
-            equity
+            scoring_cumulative_pnl
         )
 
         maximum_drawdown = float(
-            np.min(
-                equity - running_peak
+            np.max(
+                running_peak
+                - scoring_cumulative_pnl
             )
         )
 
         return BaselineResult(
-            strategy_name=strategy.name,
-
-            daily_pnl=daily_net_pnl,
-            gross_daily_pnl=daily_gross_pnl,
-            daily_commissions=daily_commissions,
-            daily_turnover=daily_turnover,
+            name=strategy.name,
+            daily_pnl=daily_pnl,
             cumulative_pnl=cumulative_pnl,
-            positions=position_history,
-
+            gross_daily_pnl=gross_daily_pnl,
+            daily_commissions=daily_commissions,
+            positions=positions,
             total_pnl=float(
-                np.sum(daily_net_pnl)
+                np.sum(scoring_daily_pnl)
             ),
-            gross_pnl=float(
-                np.sum(daily_gross_pnl)
+            total_gross_pnl=float(
+                np.sum(scoring_gross_pnl)
             ),
-            total_commission=float(
-                np.sum(daily_commissions)
-            ),
-            total_turnover=float(
-                np.sum(daily_turnover)
+            total_commissions=float(
+                np.sum(scoring_commissions)
             ),
             mean_daily_pnl=mean_daily_pnl,
-            daily_pnl_std=daily_pnl_std,
+            pnl_std=pnl_std,
             annualised_sharpe=annualised_sharpe,
             score=score,
             maximum_drawdown=maximum_drawdown,
-            profitable_day_fraction=float(
-                np.mean(daily_net_pnl > 0)
+            scoring_start_day=scoring_start_index,
+            scoring_days=len(
+                scoring_daily_pnl
             ),
-            start_day=0,
-            end_day=number_of_intervals - 1,
         )
 
     def compare(
         self,
-        strategies: list[BaselineStrategy],
-        price_history: FloatArray,
-    ) -> pd.DataFrame:
-        if not strategies:
-            raise ValueError(
-                "at least one strategy is required"
-            )
-
-        results = [
-            self.evaluate(
-                strategy=strategy,
-                price_history=price_history,
+        strategies: Sequence[BaselineStrategy],
+        price_history: np.ndarray,
+        *,
+        num_test_days: int | None = None,
+    ) -> dict[str, BaselineResult]:
+        return {
+            strategy.name: self.evaluate(
+                strategy,
+                price_history,
+                num_test_days=num_test_days,
             )
             for strategy in strategies
-        ]
-
-        rows = [
-            {
-                "Strategy": result.strategy_name,
-                "Gross PnL": result.gross_pnl,
-                "Total PnL": result.total_pnl,
-                "Commission": (
-                    result.total_commission
-                ),
-                "Turnover": (
-                    result.total_turnover
-                ),
-                "Mean Daily PnL": (
-                    result.mean_daily_pnl
-                ),
-                "Daily PnL Std": (
-                    result.daily_pnl_std
-                ),
-                "Annualised Sharpe": (
-                    result.annualised_sharpe
-                ),
-                "Score": result.score,
-                "Maximum Drawdown": (
-                    result.maximum_drawdown
-                ),
-                "Profitable Day Fraction": (
-                    result
-                    .profitable_day_fraction
-                ),
-            }
-            for result in results
-        ]
-
-        return (
-            pd.DataFrame(rows)
-            .set_index("Strategy")
-            .sort_values(
-                "Score",
-                ascending=False,
-            )
-        )
+        }
     
     def results_dataframe(
         self,
-        results: dict[
-            str,
-            BaselineResult,
-        ],
+        results: Sequence[BaselineResult]
+        | dict[str, BaselineResult],
     ) -> pd.DataFrame:
-        if not results:
-            raise ValueError(
-                "at least one result is required"
-            )
+        if isinstance(results, dict):
+            result_values = results.values()
+        else:
+            result_values = results
 
         rows = [
             {
-                "Strategy": result.strategy_name,
-                "Gross PnL": result.gross_pnl,
+                "Strategy": result.name,
                 "Total PnL": result.total_pnl,
-                "Commission": (
-                    result.total_commission
-                ),
-                "Turnover": result.total_turnover,
-                "Mean Daily PnL": (
-                    result.mean_daily_pnl
-                ),
-                "Daily PnL Std": (
-                    result.daily_pnl_std
-                ),
-                "Annualised Sharpe": (
-                    result.annualised_sharpe
-                ),
+                "Gross PnL": result.total_gross_pnl,
+                "Commissions": result.total_commissions,
+                "Mean Daily PnL": result.mean_daily_pnl,
+                "PnL Std": result.pnl_std,
+                "Annualised Sharpe": result.annualised_sharpe,
                 "Score": result.score,
-                "Maximum Drawdown": (
-                    result.maximum_drawdown
-                ),
-                "Profitable Day Fraction": (
-                    result.profitable_day_fraction
-                ),
+                "Maximum Drawdown": result.maximum_drawdown,
+                "Scoring Start Day": result.scoring_start_day,
+                "Scoring Days": result.scoring_days,
             }
-            for result in results.values()
+            for result in result_values
         ]
 
         return (
             pd.DataFrame(rows)
-            .set_index("Strategy")
             .sort_values(
-                "Score",
+                by="Score",
                 ascending=False,
             )
+            .reset_index(drop=True)
         )

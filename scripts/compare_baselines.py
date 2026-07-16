@@ -258,11 +258,11 @@ def main() -> None:
         ),
     }
 
-    leader_components = {
-        name: result
-        for name, result in results.items()
-        if name in leader_component_names
-    }
+    leader_components = evaluator.compare(
+        strategies=create_components(),
+        price_history=prices,
+        num_test_days=250,
+    )
 
     leader_analysis = LeaderAnalyser(
         annualisation_days=250,

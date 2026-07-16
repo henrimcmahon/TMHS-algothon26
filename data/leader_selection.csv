@@ -1,9 +1,9 @@
 Strategy,Days Selected,Selection Fraction
-20-day losers-long winners-short top/bottom 20%,391,0.7835671342685371
-Max long all assets,75,0.15030060120240482
-Cash,20,0.04008016032064128
-5-day winners-long losers-short top/bottom 20%,8,0.01603206412825651
-Max short all assets,5,0.01002004008016032
+20-day losers-long winners-short top/bottom 20%,641,0.855807743658211
+Max long all assets,75,0.10013351134846461
+Cash,20,0.0267022696929239
+5-day winners-long losers-short top/bottom 20%,8,0.010680907877169559
+Max short all assets,5,0.006675567423230975
 Previous-day momentum,0,0.0
 ALGO short-and-hold,0,0.0
 ALGO long-and-hold,0,0.0
