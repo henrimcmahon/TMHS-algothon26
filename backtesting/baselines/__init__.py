@@ -14,6 +14,9 @@ from .top_k_score_ensemble import TopKScoreEnsemble
 from .cross_sectional_rank import (
     CrossSectionalRankStrategy,
 )
+from .weighted_blend import (
+    WeightedBlendStrategy,
+)
 
 __all__ = [
     "BaselineStrategy",
