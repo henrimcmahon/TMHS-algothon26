@@ -11,13 +11,13 @@ from backtesting.leader_analysis import (
 )
 from visualisation import (
     LeaderVisualiser,
+    StrategyWindowExplorer,
 )
 from backtesting.baselines import (
     AlgoHoldStrategy,
     AllAssetsHoldStrategy,
     BaselineStrategy,
     LeaderStrategy,
-    NoPositionStrategy,
     PositiveScoreEnsemble,
     PreviousReturnStrategy,
     SoftmaxScoreEnsemble,
@@ -29,6 +29,7 @@ from backtesting.leader_diagnostics import (
 )
 from models.ticker_universe import TickerUniverse
 
+NUM_TEST_DAYS = 250
 
 def create_components() -> list[BaselineStrategy]:
     """
@@ -96,7 +97,6 @@ def create_components() -> list[BaselineStrategy]:
 def create_strategies() -> list[BaselineStrategy]:
     return [
         # Simple baselines
-        NoPositionStrategy(),
         AlgoHoldStrategy("long"),
         AlgoHoldStrategy("short"),
         AllAssetsHoldStrategy("long"),
@@ -211,9 +211,30 @@ def main() -> None:
         dtype=np.float64,
     )
 
+    total_days = prices.shape[1]
+
+    effective_test_days = (
+        total_days
+        if NUM_TEST_DAYS is None
+        else NUM_TEST_DAYS
+    )
+
+    start_day = total_days - effective_test_days
+
+    print(
+        f"\nEvaluating on days "
+        f"{start_day}–{total_days - 1} "
+        f"({effective_test_days} days)\n"
+    )
+
     strategies = create_strategies()
 
     evaluator = BaselineEvaluator()
+    window_results = evaluator.compare(
+        strategies=create_strategies(),
+        price_history=prices,
+        num_test_days=None,
+    )
 
     # Evaluate once so the same daily results can be reused for both
     # the comparison table and the perfect-foresight oracle.
@@ -221,6 +242,7 @@ def main() -> None:
         strategy.name: evaluator.evaluate(
             strategy=strategy,
             price_history=prices,
+            num_test_days=effective_test_days,
         )
         for strategy in strategies
     }
@@ -258,14 +280,17 @@ def main() -> None:
         ),
     }
 
-    leader_components = {
-        name: result
-        for name, result in results.items()
-        if name in leader_component_names
-    }
+    leader_components = evaluator.compare(
+        strategies=create_components(),
+        price_history=prices,
+        num_test_days=effective_test_days,
+    )
 
     leader_analysis = LeaderAnalyser(
-        annualisation_days=250,
+        annualisation_days=min(
+            effective_test_days,
+            250,
+        ),
         minimum_observations=20,
         window=None,
         minimum_score=0.0,
@@ -311,6 +336,15 @@ def main() -> None:
         component_results=leader_components,
     ).plot_dashboard()
 
+    StrategyWindowExplorer(
+        results=window_results,
+        total_price_days=prices.shape[1],
+        initial_window_days=250,
+        top_n=7,
+        rolling_window_days=50,
+        rolling_step_days=5,
+    ).show()
+
     comparison = evaluator.results_dataframe(
         results
     )
@@ -349,7 +383,7 @@ def main() -> None:
     }
 
     oracle_result = OracleEvaluator().evaluate(
-        oracle_components
+        oracle_components,
     )
 
     print("Perfect-foresight oracle")

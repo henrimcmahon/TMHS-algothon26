@@ -29,6 +29,9 @@ class OracleResult:
     maximum_drawdown: float
     profitable_day_fraction: float
 
+    scoring_start_day: int
+    scoring_days: int
+
     def summary(self) -> pd.Series:
         return pd.Series(
             {
@@ -85,6 +88,16 @@ class OracleEvaluator:
             )
 
         strategy_names = list(results)
+
+        first_result = next(iter(results.values()))
+
+        scoring_start_day = (
+            first_result.scoring_start_day
+        )
+
+        scoring_days = (
+            first_result.scoring_days
+        )
 
         lengths = {
             len(result.daily_pnl)
@@ -189,22 +202,18 @@ class OracleEvaluator:
         return OracleResult(
             daily_pnl=daily_pnl,
             cumulative_pnl=cumulative_pnl,
-            selected_strategies=(
-                selected_strategies
-            ),
-            total_pnl=float(
-                np.sum(daily_pnl)
-            ),
+            selected_strategies=selected_strategies,
+
+            total_pnl=float(np.sum(daily_pnl)),
             mean_daily_pnl=mean_daily_pnl,
             daily_pnl_std=daily_pnl_std,
-            annualised_sharpe=(
-                annualised_sharpe
-            ),
+            annualised_sharpe=annualised_sharpe,
             score=score,
-            maximum_drawdown=(
-                maximum_drawdown
-            ),
+            maximum_drawdown=maximum_drawdown,
             profitable_day_fraction=float(
                 np.mean(daily_pnl > 0)
             ),
+
+            scoring_start_day=scoring_start_day,
+            scoring_days=scoring_days,
         )

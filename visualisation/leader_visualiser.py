@@ -115,7 +115,7 @@ class LeaderVisualiser:
             2,
             2,
             figsize=(17, 9),
-            sharex=True,
+            sharex=False,
         )
 
         figure.subplots_adjust(
@@ -370,6 +370,27 @@ class LeaderVisualiser:
             )
         )
 
+        best_static_name = max(
+            self._component_results,
+            key=lambda name: (
+                self._component_results[
+                    name
+                ].score
+            ),
+        )
+
+        best_static_result = (
+            self._component_results[
+                best_static_name
+            ]
+        )
+
+        best_static_colour = (
+            self.strategy_colours[
+                best_static_name
+            ]
+        )
+
         pnl_axis.plot(
             days,
             self.result.leader_cumulative_pnl,
@@ -380,9 +401,18 @@ class LeaderVisualiser:
         pnl_axis.plot(
             days,
             self.result.best_static_cumulative_pnl,
-            linewidth=1.8,
+            linewidth=2.0,
             linestyle="--",
-            label="Best static strategy",
+            color=best_static_colour,
+            label=(
+                "Best static: "
+                + abbreviated_name(
+                    best_static_name
+                ).replace(
+                    "\n",
+                    " ",
+                )
+            ),
         )
 
         pnl_axis.plot(
@@ -429,7 +459,16 @@ class LeaderVisualiser:
             days,
             self.result.cumulative_static_regret,
             linewidth=2,
-            label="Regret versus best static",
+            color=best_static_colour,
+            label=(
+                "Regret versus "
+                + abbreviated_name(
+                    best_static_name
+                ).replace(
+                    "\n",
+                    " ",
+                )
+            ),
         )
 
         regret_axis.axhline(
@@ -441,11 +480,18 @@ class LeaderVisualiser:
             days,
             0,
             self.result.cumulative_static_regret,
+            color=best_static_colour,
             alpha=0.12,
         )
 
         regret_axis.set_title(
-            "Cumulative Regret Versus Best Static"
+            "Cumulative Regret Versus "
+            + abbreviated_name(
+                best_static_name
+            ).replace(
+                "\n",
+                " ",
+            )
         )
 
         regret_axis.set_ylabel(
@@ -590,14 +636,23 @@ class LeaderVisualiser:
         # Shared formatting
         # ==========================================================
 
+        window_start = (
+            self.result.days[0] - 1
+        )
+
+        window_end = (
+            self.result.days[-1]
+        )
+
         for axis in (
             leadership_axis,
             pnl_axis,
             regret_axis,
             rank_axis,
         ):
-            axis.set_xlabel(
-                "Day"
+            axis.set_xlim(
+                window_start,
+                window_end,
             )
 
         figure.suptitle(
