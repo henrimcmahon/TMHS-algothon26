@@ -55,6 +55,7 @@ class TradingEngine:
         minimum_trade_dollars: float = 100.0,
         turnover_smoothing: float = 0.25,
         proxy_index: int = 0,
+        exposure_ramp_days: int = 40,
     ) -> None:
         if residual_estimation_window < 2:
             raise ValueError(
@@ -82,6 +83,17 @@ class TradingEngine:
         self.forgetting_rate = forgetting_rate
         self.entropy_penalty = entropy_penalty
         self.proxy_index = proxy_index
+
+        self.exposure_ramp_days = exposure_ramp_days
+        self._live_trading_days = 0
+
+        if exposure_ramp_days < 0:
+            raise ValueError(
+                "exposure_ramp_days cannot be negative"
+            )
+
+        self.exposure_ramp_days = exposure_ramp_days
+        self._live_trading_days = 0
 
         self.allocator = (
             PortfolioAllocator.algothon_defaults(
@@ -318,6 +330,19 @@ class TradingEngine:
             end=current_return_end,
             entropy_penalty=self.entropy_penalty,
         )
+
+        if self.exposure_ramp_days > 0:
+            ramp_fraction = min(
+                1.0,
+                (
+                    self._live_trading_days + 1
+                )
+                / self.exposure_ramp_days,
+            )
+
+            signals = signals * ramp_fraction
+
+        self._live_trading_days += 1
 
         allocation = self.allocator.allocate(
             signals=signals,

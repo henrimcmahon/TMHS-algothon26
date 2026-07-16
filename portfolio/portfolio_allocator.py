@@ -232,6 +232,7 @@ class PortfolioAllocator:
         signals: FloatArray,
         prices: FloatArray,
         current_positions: IntArray | None = None,
+        exposure_fraction: float = 1.0,
     ) -> AllocationResult:
         """
         Convert signals into legal end-of-day share positions.
@@ -280,8 +281,16 @@ class PortfolioAllocator:
             * price_values
         )
 
-        target_fractions = np.tanh(
-            signal_values / self.signal_scale
+        if not 0.0 <= exposure_fraction <= 1.0:
+            raise ValueError(
+                "exposure_fraction must be between 0 and 1"
+            )
+
+        target_fractions = (
+            np.tanh(
+                signal_values / self.signal_scale
+            )
+            * exposure_fraction
         )
 
         desired_dollar_positions = (
