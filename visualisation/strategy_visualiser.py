@@ -21,7 +21,7 @@ class ExplorerState(TypedDict):
     cluster_order: NDArray[np.intp]
 
 
-class StrategyVisualizer:
+class Strategyvisualiser:
     """
     Displays analytics calculated by MarketStatistics.
 

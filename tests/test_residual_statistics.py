@@ -4,6 +4,7 @@ from models.ticker_universe import TickerUniverse
 from statistics import residual_statistics
 from statistics.market_statistics import MarketStatistics
 from statistics.residual_statistics import ResidualStatistics
+import trading
 
 
 def test_fast_residual_matrix_matches_original() -> None:

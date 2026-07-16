@@ -96,7 +96,7 @@ This class contains analytical calculations only. It does not perform visualisat
 
 ## Market visualisation
 
-### `StrategyVisualizer`
+### `Strategyvisualiser`
 
 Displays calculations produced by `MarketStatistics`.
 
@@ -628,7 +628,7 @@ return positions
 | ------------------------ | ----------------------------------------- |
 | `TickerUniverse`         | Load and organise instruments             |
 | `MarketStatistics`       | Calculate observable market features      |
-| `StrategyVisualizer`     | Display market analytics                  |
+| `Strategyvisualiser`     | Display market analytics                  |
 | `ResidualStatistics`     | Remove systematic market exposure         |
 | `PredictiveDistribution` | Represent return uncertainty              |
 | `PredictiveHypothesis`   | Model one return-generating mechanism     |
