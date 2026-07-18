@@ -34,6 +34,11 @@ class BaselineResult:
     score: float
     maximum_drawdown: float
 
+    daily_turnover: NDArray[np.float64]
+    total_shares_traded: float
+    average_daily_turnover: float
+    maximum_daily_turnover: float
+
     scoring_start_day: int
     scoring_days: int
 
@@ -102,19 +107,6 @@ class BaselineEvaluator:
 
         number_of_days = price_history.shape[1]
 
-        if num_test_days is None:
-            num_test_days = number_of_days
-
-        if num_test_days <= 0:
-            raise ValueError(
-                "num_test_days must be positive"
-            )
-
-        if num_test_days > number_of_days:
-            raise ValueError(
-                "num_test_days cannot exceed the number of observations"
-            )
-
         scoring_start_index = (
             number_of_days - num_test_days
         )
@@ -139,13 +131,16 @@ class BaselineEvaluator:
                 "price_history must contain at least two days"
             )
 
-        if num_test_days is None:
-            num_test_days = number_of_days
-
-        if num_test_days <= 0:
+        if num_test_days is not None and num_test_days <= 0:
             raise ValueError(
-                "num_test_days must be positive"
+                "num_test_days must be positive."
             )
+
+        scoring_start_day = (
+            0
+            if num_test_days is None
+            else max(0, number_of_days - num_test_days)
+        )
 
         if num_test_days > number_of_days:
             raise ValueError(
@@ -348,6 +343,34 @@ class BaselineEvaluator:
             pnl_std,
         )
 
+        # Shape: (n_days, n_assets)
+        position_changes = np.diff(
+            positions,
+            axis=0,
+        )
+
+        daily_turnover = np.sum(
+            np.abs(position_changes),
+            axis=1,
+            dtype=np.float64,
+        )
+
+        total_shares_traded = float(
+            np.sum(daily_turnover)
+        )
+
+        average_daily_turnover = (
+            float(np.mean(daily_turnover))
+            if daily_turnover.size > 0
+            else 0.0
+        )
+
+        maximum_daily_turnover = (
+            float(np.max(daily_turnover))
+            if daily_turnover.size > 0
+            else 0.0
+        )
+
         scoring_cumulative_pnl = np.concatenate(
             (
                 np.array(
@@ -387,19 +410,19 @@ class BaselineEvaluator:
             total_commissions=float(
                 np.sum(scoring_commissions)
             ),
+            daily_turnover=daily_turnover,
+            total_shares_traded=total_shares_traded,
+            average_daily_turnover=average_daily_turnover,
+            maximum_daily_turnover=maximum_daily_turnover,
             mean_daily_pnl=mean_daily_pnl,
             pnl_std=pnl_std,
             annualised_sharpe=annualised_sharpe,
             score=score,
             maximum_drawdown=maximum_drawdown,
-            scoring_start_day = (
-                0
-                if num_test_days is None
-                else number_of_days - num_test_days
-            ),
+            scoring_start_day = scoring_start_day,
             scoring_days=len(
                 scoring_daily_pnl
-            ),
+            )
         )
 
     def compare(

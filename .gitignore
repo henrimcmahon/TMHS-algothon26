@@ -28,3 +28,5 @@ htmlcov/
 
 # Jupyter
 .ipynb_checkpoints/
+__pycache__/ 
+*.py[cod]

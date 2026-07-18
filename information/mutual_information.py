@@ -25,15 +25,54 @@ def joint_probability_matrix(
     if x_values.size == 0:
         raise ValueError("x and y cannot be empty.")
 
-    joint = np.zeros((len(alphabet), len(alphabet)), dtype=float)
+    alphabet_array = np.asarray(alphabet)
+    n_states = alphabet_array.size
 
-    for x_index, x_state in enumerate(alphabet):
-        for y_index, y_state in enumerate(alphabet):
-            joint[x_index, y_index] = np.mean(
-                (x_values == x_state) & (y_values == y_state)
-            )
+    # Map each observed state onto an integer code:
+    # alphabet[0] -> 0, alphabet[1] -> 1, ...
+    x_codes = np.searchsorted(alphabet_array, x_values)
+    y_codes = np.searchsorted(alphabet_array, y_values)
 
-    return joint
+    x_in_bounds = x_codes < n_states
+    y_in_bounds = y_codes < n_states
+
+    x_valid = np.zeros(x_values.size, dtype=bool)
+    y_valid = np.zeros(y_values.size, dtype=bool)
+
+    x_valid[x_in_bounds] = (
+        alphabet_array[x_codes[x_in_bounds]]
+        == x_values[x_in_bounds]
+    )
+    y_valid[y_in_bounds] = (
+        alphabet_array[y_codes[y_in_bounds]]
+        == y_values[y_in_bounds]
+    )
+
+    valid = x_valid & y_valid
+
+    if not np.all(valid):
+        invalid_x = np.unique(x_values[~x_valid])
+        invalid_y = np.unique(y_values[~y_valid])
+
+        raise ValueError(
+            "All values must belong to the supplied alphabet. "
+            f"Invalid x values: {invalid_x}; "
+            f"invalid y values: {invalid_y}."
+        )
+
+    # Encode each pair as one integer:
+    #
+    # (x_code, y_code) -> x_code * n_states + y_code
+    #
+    # For three states this produces codes 0 through 8.
+    pair_codes = x_codes * n_states + y_codes
+
+    counts = np.bincount(
+        pair_codes,
+        minlength=n_states * n_states,
+    )
+
+    return counts.reshape(n_states, n_states) / x_values.size
 
 
 def mutual_information(
@@ -48,22 +87,29 @@ def mutual_information(
 
     With base=2, the result is measured in bits.
     """
-    if base <= 0.0 or np.isclose(base, 1.0):
+    if base <= 0.0 or base == 1.0:
         raise ValueError("base must be positive and different from 1.")
 
-    joint = joint_probability_matrix(x, y, alphabet=alphabet)
+    joint = joint_probability_matrix(
+        x,
+        y,
+        alphabet=alphabet,
+    )
+
     p_x = joint.sum(axis=1)
     p_y = joint.sum(axis=0)
     independent = np.outer(p_x, p_y)
 
-    valid = (joint > 0.0) & (independent > 0.0)
+    valid = joint > 0.0
+
+    log_base = np.log(base)
 
     return float(
         np.sum(
             joint[valid]
             * np.log(joint[valid] / independent[valid])
-            / np.log(base)
         )
+        / log_base
     )
 
 

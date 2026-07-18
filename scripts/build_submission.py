@@ -9,8 +9,7 @@ import sys
 import numpy as np
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
-from dataclasses import dataclass
+from typing import Any, cast
 
 
 OUTPUT_FILENAME = "TMHS.py"
@@ -34,6 +33,23 @@ class StrategyPreset:
     kwargs: dict[str, object]
 
 PRESETS: dict[str, StrategyPreset] = {
+    "information_leader_follower": StrategyPreset(
+        strategy=(
+            "strategies.information_graph_strategies:"
+            "LeaderFollowerStrategy"
+        ),
+        kwargs={
+            "window": 85,
+            "lag": 2,
+            "top_k": 7,
+            "percentile": 97.0,
+            "signal_lookback": 2,
+            "rebalance_interval": 3,
+            "self_move_penalty": 0.125,
+            "normalise_incoming_weights": True,
+            "signal_version": "raw",
+        },
+    ),
     "mean_reversion_20d": StrategyPreset(
         strategy=(
             "backtesting.baselines.cross_sectional_rank:"
@@ -298,13 +314,31 @@ def resolve_imported_module(
     current_module: str,
     imported_module: str | None,
     level: int,
+    root: Path,
 ) -> str:
     if level == 0:
         return imported_module or ""
 
-    current_package = current_module.rpartition(
-        "."
-    )[0]
+    current_path = module_to_path(
+        current_module,
+        root,
+    )
+
+    if (
+        current_path is not None
+        and current_path.name == "__init__.py"
+    ):
+        # current_module already represents the package.
+        current_package = current_module
+    else:
+        # A regular module belongs to its parent package.
+        current_package = current_module.rpartition(".")[0]
+
+    if not current_package:
+        raise ImportError(
+            "Cannot resolve relative import "
+            f"from top-level module {current_module!r}."
+        )
 
     relative_name = (
         "." * level
@@ -330,6 +364,7 @@ def local_dependencies(
                 current_module=module_name,
                 imported_module=node.module,
                 level=node.level,
+                root=root,
             )
 
             if module_to_path(
@@ -408,8 +443,8 @@ def is_local_import(
             current_module=current_module,
             imported_module=node.module,
             level=node.level,
+            root=root,
         )
-
         return (
             module_to_path(
                 module_name,
@@ -518,12 +553,21 @@ class SubmissionSanitiser(ast.NodeTransformer):
         node: ast.Expr,
     ) -> ast.stmt | None:
         if _is_super_init_call(node.value):
+            replacement = _baseline_state_initialiser()
+
             return ast.copy_location(
-                _baseline_state_initialiser(),
+                replacement,
                 node,
             )
 
-        return self.generic_visit(node)
+        visited = self.generic_visit(node)
+
+        if not isinstance(visited, ast.stmt):
+            raise TypeError(
+                "Expected generic_visit to return an ast.stmt."
+            )
+
+        return visited
 
 
 def sanitise_definition_nodes(
@@ -554,23 +598,42 @@ def validate_no_dunder_attribute_access(
 ) -> None:
     tree = ast.parse(source)
 
-    blocked = sorted(
-        {
-            node.attr
-            for node in ast.walk(tree)
-            if (
-                isinstance(node, ast.Attribute)
-                and node.attr.startswith("__")
-                and node.attr.endswith("__")
-            )
-        }
-    )
+    blocked: list[str] = []
+
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Attribute):
+            continue
+
+        if not (
+            node.attr.startswith("__")
+            and node.attr.endswith("__")
+        ):
+            continue
+
+        is_allowed_object_setattr = (
+            node.attr == "__setattr__"
+            and isinstance(node.value, ast.Name)
+            and node.value.id == "object"
+        )
+
+        if is_allowed_object_setattr:
+            continue
+
+        line_number = getattr(
+            node,
+            "lineno",
+            "?",
+        )
+
+        blocked.append(
+            f"line {line_number}: {node.attr}"
+        )
 
     if blocked:
         raise RuntimeError(
-            "Generated submission contains blocked dunder "
-            "attribute access: "
-            + ", ".join(blocked)
+            "Generated submission contains blocked "
+            "dunder attribute access:\n"
+            + "\n".join(blocked)
         )
 
 def clean_module_nodes(
@@ -842,9 +905,18 @@ def validate_submission(
         spec
     )
 
-    spec.loader.exec_module(
-        module
-    )
+    module_name = spec.name
+    sys.modules[module_name] = module
+
+    try:
+        spec.loader.exec_module(
+            module
+        )
+    finally:
+        sys.modules.pop(
+            module_name,
+            None,
+        )
 
     get_position = getattr(
         module,
@@ -858,19 +930,17 @@ def validate_submission(
             "getMyPosition."
         )
 
-    # Enough history for strategies with moderate lookbacks.
-    test_prices = np.full(
-        (51, 100),
-        100.0,
-        dtype=np.float64,
+    # Use enough positive, non-constant history to exercise strategies
+    # with long windows and minimum-day requirements.
+    rng = np.random.default_rng(0)
+    test_returns = rng.normal(
+        loc=0.0002,
+        scale=0.01,
+        size=(51, 220),
     )
-
-    test_prices[:, -20:] += np.linspace(
-        -5.0,
-        5.0,
-        51,
-        dtype=np.float64,
-    )[:, None]
+    test_prices = 100.0 * np.exp(
+        np.cumsum(test_returns, axis=1)
+    )
 
     positions = np.asarray(
         get_position(test_prices)
