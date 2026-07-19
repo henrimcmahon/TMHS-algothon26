@@ -4,7 +4,7 @@ import pandas as pd
 from TMHS import getMyPosition as getPosition
 
 pricesFile = './prices.txt'
-numTestDays = 450
+numTestDays = 500
 scoreDefaultParam = 1.0
 defaultCommRate = 0.0001
 inst0CommRate = 0.00002
