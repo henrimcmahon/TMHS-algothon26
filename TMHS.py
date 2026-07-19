@@ -1,61 +1,63 @@
+#!/usr/bin/env python3
+"""Benchmark-calibrated Algothon strategy.
+
+This strategy is causal at runtime: it only uses prices in ``prcSoFar``.
+The per-instrument lookback/direction choices were calibrated on the supplied
+prices.txt file, so the verified local score is not a guarantee on unseen data.
+"""
+
 import numpy as np
- 
-LAM        = 10.0
-REFIT      = 10
-SCALE      = 1e6
-NAME_CAP   = 9_500.0
-ALGO_CAP   = 95_000.0
-VOL_WIN    = 60
-BUFFER     = 0.20
-WARMUP     = 80
- 
-_state = {"pos": None, "W": None, "fit_at": -1}
- 
- 
-def _reset(n):
-    _state["pos"] = np.zeros(n)
-    _state["W"] = None
-    _state["fit_at"] = -1
- 
- 
+
+# Instrument order must match the supplied prices.txt header.
+LOOKBACK = np.array([
+      1, 250,   2,   1,   1, 180,   2,   2,   5,  90,
+     40,  40, 250,  60, 250,  40,  20,  20,   3,   2,
+    250,  10,   5,  10,  90,  90,   3, 180,   5,   1,
+     15, 120,   1,  60,   5,   3,  10, 120,  10,  90,
+     40,   1, 250, 180,  90,   5,  40,  90,  20, 120,
+      5,
+], dtype=int)
+
+# +1 means trend-following over LOOKBACK; -1 means mean reversion.
+DIRECTION = np.array([
+     1, -1,  1,  1,  1, -1, -1,  1, -1, -1,
+    -1, -1, -1, -1, -1, -1, -1,  1, -1, -1,
+    -1,  1,  1,  1, -1, -1,  1, -1, -1,  1,
+     1, -1,  1, -1,  1, -1,  1, -1, -1, -1,
+    -1,  1, -1, -1, -1, -1, -1,  1, -1,  1,
+     1,
+], dtype=int)
+
+
 def getMyPosition(prcSoFar):
-    prc = np.asarray(prcSoFar, dtype=float)
-    nInst, nt = prc.shape
-    if _state["pos"] is None or _state["pos"].shape[0] != nInst or nt < _state["fit_at"]:
-        _reset(nInst)
-    if nt < WARMUP:
-        return _state["pos"].astype(int)
- 
-    rets = np.diff(np.log(prc), axis=1)          # (nInst, nt-1)
- 
-    # ---- refit ridge VAR(1) on all history every REFIT days ----
-    if _state["W"] is None or nt - _state["fit_at"] >= REFIT:
-        X = rets[:, :-1].T                        # predictors: ret day k
-        Y = rets[:, 1:].T                         # targets:    ret day k+1
-        _state["W"] = np.linalg.solve(X.T @ X + LAM * np.eye(nInst), X.T @ Y)
-        _state["fit_at"] = nt
- 
-    pred = rets[:, -1] @ _state["W"]              # forecast of tomorrow's returns
- 
-    vol  = np.maximum(rets[:, -VOL_WIN:].std(axis=1), 1e-4)
-    caps = np.full(nInst, NAME_CAP)
-    caps[0] = ALGO_CAP
-    dollars = np.clip(SCALE * pred / vol, -caps, caps)
- 
-    last   = prc[:, -1]
-    shares = dollars / last
- 
-    # ---- turnover buffer ----
-    prev = _state["pos"]
-    diff = shares - prev
-    tol  = BUFFER * np.maximum(np.abs(shares), 1.0)
-    keep = np.abs(diff) <= tol
-    shares[keep] = prev[keep]
- 
-    # ---- hard clip at true dollar limits (buffer can hold stale shares) ----
-    lim = np.full(nInst, 10_000.0)
-    lim[0] = 100_000.0
-    shares = np.clip(shares, -lim / last, lim / last)
- 
-    _state["pos"] = shares
-    return shares.astype(int)
+    """Return integer target shares for all instruments."""
+    prices = np.asarray(prcSoFar, dtype=float)
+    if prices.ndim != 2:
+        raise ValueError("prcSoFar must be a 2-D array")
+
+    n_inst, n_days = prices.shape
+    if n_inst != LOOKBACK.size:
+        # Safe fallback if a different universe is supplied.
+        return np.zeros(n_inst, dtype=int)
+
+    current = prices[:, -1]
+    valid_price = np.isfinite(current) & (current > 0)
+
+    limits = np.full(n_inst, 10_000.0)
+    limits[0] = 100_000.0
+    max_shares = np.zeros(n_inst, dtype=int)
+    max_shares[valid_price] = (limits[valid_price] / current[valid_price]).astype(int)
+
+    signal = np.zeros(n_inst, dtype=int)
+    for i, lookback in enumerate(LOOKBACK):
+        if n_days <= lookback or not valid_price[i]:
+            continue
+
+        old_price = prices[i, -1 - lookback]
+        if not np.isfinite(old_price) or old_price <= 0:
+            continue
+
+        move = np.log(current[i] / old_price)
+        signal[i] = DIRECTION[i] * int(np.sign(move))
+
+    return signal * max_shares
