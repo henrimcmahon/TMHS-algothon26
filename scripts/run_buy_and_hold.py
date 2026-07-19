@@ -1,6 +1,12 @@
 from __future__ import annotations
 
 from pathlib import Path
+import sys
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 import numpy as np
 
@@ -73,10 +79,8 @@ def main() -> None:
     strategy = Strategy(
         name="Buy and Hold",
         signal_model=BuyAndHoldSignal(),
-        position_allocator=EqualNotionalAllocator(
-            total_notional=100_000.0,
-        ),
-        rebalance_interval=prices.shape[1] + 1,
+        position_allocator=EqualNotionalAllocator(),
+        rebalance_interval=1,
     )
 
     backtester = Backtester(
