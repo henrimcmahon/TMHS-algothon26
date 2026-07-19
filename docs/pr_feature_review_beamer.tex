@@ -1,0 +1,192 @@
+\documentclass[aspectratio=169]{beamer}
+\usetheme{Madrid}
+\usecolortheme{default}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{hyperref}
+\title{TMHS Algothon PR Feature Review}
+\subtitle{What to cherry-pick into a focused integration branch}
+\author{Prepared for TMHS}
+\date{July 18, 2026}
+
+\begin{document}
+
+\begin{frame}
+  \titlepage
+\end{frame}
+
+\begin{frame}{Goal for the next integration PR}
+\begin{itemize}
+  \item Build one clean branch that keeps reproducible infrastructure, evaluation, and the few strategies with evidence.
+  \item Avoid merging exploratory or brittle trading algorithms that cannot be iterated on quickly.
+  \item Preserve scripts and tests that let the team compare candidates under the official 250-day scoring window.
+  \item Submit a small, auditable strategy implementation rather than every research artifact.
+\end{itemize}
+\end{frame}
+
+\begin{frame}{Executive recommendation}
+\begin{enumerate}
+  \item \textbf{Commit core plumbing}: ticker models, market statistics, residual statistics, portfolio allocator, backtester, and official evaluator wrappers.
+  \item \textbf{Commit evidence-backed strategy pieces}: previous-day momentum, weighted blend sweeps, and the best information graph leader-follower variant as research-backed options.
+  \item \textbf{Do not commit as production}: unvalidated Bayesian regime switching, large visual simulators, generated CSV/PNG/NPZ research artifacts, and pycache files.
+  \item \textbf{Next branch shape}: code + tests + one concise candidate builder; generated outputs should be recreated locally, not versioned unless required.
+\end{enumerate}
+\end{frame}
+
+\begin{frame}{PR map reviewed}
+\small
+\begin{tabular}{p{0.16\textwidth}p{0.36\textwidth}p{0.36\textwidth}}
+\toprule
+Commit/PR & Theme & Recommendation \\
+\midrule
+58f1a22--f69fb06 & data model, market stats, strategy visualisation, ALGO proxy/residuals & Keep statistics/model foundations; drop bulky visual UI from integration unless needed. \\
+2f7f10d--211c420 & Bayesian hypotheses and signal model & Keep tests/diagnostics as research; do not productionize yet. \\
+25b2ac8--40061d0 & portfolio allocator and trading engine & Keep allocator constraints and engine interfaces; audit resulting submission size. \\
+16b4bb3--8adba3a & backtester, baseline visualiser, baseline comparison & Keep backtester/evaluator and simple baselines. \\
+bf1ca4a--1e1cb8f & meta strategies, leader analysis, submission builder & Keep evaluation harness and only proven simple strategies. \\
+32480a7--0542aa6 & sweep tooling and information graph strategies & Keep sweep tooling and top information graph strategy as an experimental candidate. \\
+\bottomrule
+\end{tabular}
+\end{frame}
+
+\begin{frame}{PR: Market statistics and visualisation foundation}
+\textbf{Useful features to commit}
+\begin{itemize}
+  \item Ticker universe abstraction and cleaned price history loading.
+  \item Market statistics and residual calculations, especially ALGO-as-equal-weight-proxy analysis.
+  \item Residual statistics tests and CSV summaries as evidence, not runtime dependencies.
+\end{itemize}
+\textbf{Defer/drop}
+\begin{itemize}
+  \item Large exploratory visualiser surface in production branch.
+  \item Generated pycache files and one-off charts/data dumps.
+\end{itemize}
+\end{frame}
+
+\begin{frame}{PR: Bayesian inference and regime work}
+\textbf{Useful features to commit}
+\begin{itemize}
+  \item Hypothesis abstractions for momentum, mean reversion, and noise as research modules.
+  \item Unit tests that verify belief-state behaviour and regime transitions.
+  \item Diagnostic scripts for offline analysis.
+\end{itemize}
+\textbf{Do not ship as primary strategy}
+\begin{itemize}
+  \item Current evidence is weaker than simple momentum and sweep-selected blends.
+  \item Complexity is high relative to the one-file competition submission constraint.
+  \item Keep it in the integration branch only if it remains isolated from the final TMHS.py path.
+\end{itemize}
+\end{frame}
+
+\begin{frame}{PR: Portfolio allocator and trading engine}
+\textbf{Useful features to commit}
+\begin{itemize}
+  \item Portfolio sizing/constraint code that centralises gross notional, per-ticker limits, turnover, and integer share handling.
+  \item End-to-end trading engine tests because they protect against off-by-one and commission mistakes.
+  \item Benchmark script as optional validation for runtime limits.
+\end{itemize}
+\textbf{Integration ask}
+\begin{itemize}
+  \item Keep public APIs small and make TMHS.py consume the allocator rather than duplicating sizing logic.
+\end{itemize}
+\end{frame}
+
+\begin{frame}{PR: Backtesting and official scoring}
+\textbf{Useful features to commit}
+\begin{itemize}
+  \item Backtester and official 250-day scoring alignment.
+  \item Baselines: no position, ALGO hold, all-assets hold, previous-day return/momentum, and leaderboard-style comparisons.
+  \item Baseline comparison script so teammates can reproduce rankings after each candidate change.
+\end{itemize}
+\textbf{Why it matters}
+\begin{itemize}
+  \item It makes strategy selection an evidence discussion instead of a vibes discussion.
+  \item It highlights that previous-day momentum is the strongest simple baseline in available results.
+\end{itemize}
+\end{frame}
+
+\begin{frame}{PR: Meta-strategy and leader-selection experiments}
+\textbf{Useful features to commit}
+\begin{itemize}
+  \item Leader analysis/oracle evaluator for understanding which simple strategy is working in each window.
+  \item Cross-sectional rank and score ensemble implementations as benchmark competitors.
+  \item Submission builder skeleton, after trimming generated artifacts and ensuring deterministic output.
+\end{itemize}
+\textbf{Do not commit as default}
+\begin{itemize}
+  \item Expanding leader strategies with unstable or negative performance.
+  \item Positive-score ensemble and complex meta-strategy variants unless they beat momentum after costs.
+\end{itemize}
+\end{frame}
+
+\begin{frame}{PR: Weighted blend and exposure sweep}
+\textbf{Useful features to commit}
+\begin{itemize}
+  \item Weighted blend baseline because it exposes a tunable momentum/reversion mix.
+  \item Sweep script and summary table for robust selection across exposures and weights.
+  \item Candidate summary shows previous-day momentum exposure 1.00 has the best robustness score among swept candidates.
+\end{itemize}
+\textbf{Decision}
+\begin{itemize}
+  \item Use pure previous-day momentum as the production anchor.
+  \item Keep high-momentum blend variants as fallback experiments, not as the first merge target.
+\end{itemize}
+\end{frame}
+
+\begin{frame}{PR: Information-theoretic network strategies}
+\textbf{Useful features to commit}
+\begin{itemize}
+  \item Mutual information/discretisation functions and rolling graph cache.
+  \item Compact information graph strategies with reproducible parameter names.
+  \item Performance tests that keep cached graph construction practical.
+\end{itemize}
+\textbf{Evidence}
+\begin{itemize}
+  \item Best reported leader-follower candidate: raw signal, window 85, lag 2, top 7, percentile 97, rebalance 3, decay 0.60, threshold 0.25.
+  \item It is promising but lower-scoring than the simple momentum sweep result, so treat it as experimental alpha.
+\end{itemize}
+\end{frame}
+
+\begin{frame}{Recommended contents of the new branch}
+\begin{columns}
+\begin{column}{0.48\textwidth}
+\textbf{Bring in}
+\begin{itemize}
+  \item Models/statistics/residuals.
+  \item Portfolio allocator + trading engine tests.
+  \item Backtester + official 250-day evaluator.
+  \item Simple baselines and weighted blend.
+  \item Sweep and comparison scripts.
+  \item Information graph cache/strategy behind a feature flag or separate candidate function.
+\end{itemize}
+\end{column}
+\begin{column}{0.48\textwidth}
+\textbf{Leave out}
+\begin{itemize}
+  \item pycache files.
+  \item Generated charts and large NPZ artifacts.
+  \item Unused visualisation dashboards.
+  \item Bayesian production path until it has better scored evidence.
+  \item Overfit leaderboard parameters with no robustness story.
+\end{itemize}
+\end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}{Proposed pitch to the team}
+\begin{quote}
+We are not merging every experiment. The integration branch should keep the machinery that makes us faster and the few candidate strategies that have reproducible evidence. Momentum is currently the safest production anchor. Weighted blends and information graphs are worth preserving for iteration, while Bayesian and heavy visualisation work stay as research until they outperform after commissions.
+\end{quote}
+\end{frame}
+
+\begin{frame}{Immediate next steps}
+\begin{enumerate}
+  \item Create branch \texttt{feature/focused-integration-candidates} from main.
+  \item Cherry-pick infrastructure commits first; run tests after each cluster.
+  \item Add only one submission-facing strategy path in \texttt{TMHS.py}: default previous-day momentum with allocator constraints.
+  \item Keep candidate comparison scripts so the team can re-run sweeps after every change.
+  \item Open the integration PR with a checklist: scoring reproduced, runtime acceptable, no generated artifacts, no pycache.
+\end{enumerate}
+\end{frame}
+
+\end{document}
