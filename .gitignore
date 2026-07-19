@@ -1,74 +1,32 @@
-# ==========================
-# Virtual Environments
-# ==========================
-.venv/
-venv/
-env/
-ENV/
-
-# ==========================
-# Python Bytecode
-# ==========================
+# Byte-compiled / optimized files
 __pycache__/
 *.py[cod]
 *$py.class
 
-# ==========================
-# Distribution / Packaging
-# ==========================
-build/
-dist/
-*.egg-info/
-.eggs/
-pip-wheel-metadata/
+# Virtual environments
+.venv/
+venv/
+env/
 
-# ==========================
-# Testing & Coverage
-# ==========================
-.pytest_cache/
-.coverage
-.coverage.*
-htmlcov/
-.tox/
-.nox/
-
-# ==========================
-# Type Checkers
-# ==========================
-.mypy_cache/
-.pyre/
-.pytype/
-.ruff_cache/
-
-# ==========================
-# Jupyter
-# ==========================
-.ipynb_checkpoints/
-
-# ==========================
 # IDEs
-# ==========================
 .vscode/
 .idea/
 
-# ==========================
-# macOS
-# ==========================
+# OS files
 .DS_Store
+Thumbs.db
 
-# ==========================
-# Logs
-# ==========================
-*.log
+# Test/cache
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
 
-# ==========================
-# Environment Variables
-# ==========================
-.env
-.env.*
+*.prof
+*.pstats
 
-# ==========================
-# Local Data (optional)
-# ==========================
-*.sqlite
-*.db
+# Jupyter
+.ipynb_checkpoints/
+__pycache__/ 
+*.py[cod]
