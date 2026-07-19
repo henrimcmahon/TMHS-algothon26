@@ -1,3 +1,3 @@
-from visualisation.strategy_visualiser import StrategyVisualizer
+from visualisation.strategy_visualiser import StrategyVisualiser
 
-__all__ = ["StrategyVisualizer"]
+__all__ = ["StrategyVisualiser"]

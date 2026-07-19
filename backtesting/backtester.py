@@ -159,7 +159,10 @@ class Backtester:
 
             if day < n_days:
                 proposed_positions = np.asarray(
-                    strategy.get_positions(price_history),
+                    strategy.get_positions(
+                        price_history,
+                        universe.constraints,
+                    ),
                     dtype=np.int64,
                 )
 
@@ -168,16 +171,10 @@ class Backtester:
                         "strategy must return shape (n_tickers,)"
                     )
 
-                position_limits_in_shares = np.floor(
-                    dollar_position_limits
-                    / current_prices
-                ).astype(np.int64)
-
-                new_positions = np.clip(
+                new_positions = universe.constraints.clip_positions(
                     proposed_positions,
-                    -position_limits_in_shares,
-                    position_limits_in_shares,
-                ).astype(np.int64)
+                    current_prices,
+                )
             else:
                 new_positions = current_positions.copy()
 
@@ -185,20 +182,13 @@ class Backtester:
                 new_positions - current_positions
             )
 
-            traded_notional_by_ticker = (
-                current_prices
-                * np.abs(position_change)
-            )
-
-            turnover = float(
-                np.sum(traded_notional_by_ticker)
-            )
-
-            commission = float(
-                np.sum(
-                    traded_notional_by_ticker
-                    * commission_rates
-                )
+            (
+                _,
+                turnover,
+                commission,
+            ) = universe.constraints.trade_costs(
+                position_change,
+                current_prices,
             )
 
             # Purchasing or selling shares changes cash by trade value,

@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 import numpy as np
 from numpy.typing import NDArray
 
+from models.market_constraints import MarketConstraints
 from strategies.allocators.position_allocator import PositionAllocator
 from strategies.signals.signal_model import SignalModel
 
@@ -38,6 +39,7 @@ class Strategy:
     def get_positions(
         self,
         price_history: FloatArray,
+        constraints: MarketConstraints,
     ) -> IntArray:
         if price_history.ndim != 2:
             raise ValueError(
@@ -75,6 +77,7 @@ class Strategy:
             signal=signal,
             latest_prices=price_history[:, -1],
             current_positions=self.current_positions,
+            constraints=constraints,
         )
 
         if target_positions.shape != (n_tickers,):
